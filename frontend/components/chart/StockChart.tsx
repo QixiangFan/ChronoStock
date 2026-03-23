@@ -13,7 +13,6 @@ import {
   Time,
 } from "lightweight-charts";
 import { OHLCBar, NewsEvent } from "@/types";
-import { SECFiling } from "@/lib/api";
 
 export interface StockChartHandle {
   getXForTime: (time: string) => number | null;
@@ -30,7 +29,6 @@ interface MovingAverageSeries {
 interface StockChartProps {
   bars: OHLCBar[];
   events: NewsEvent[];
-  secFilings?: SECFiling[];
   activeEventTime: string | null;
   onChartEventHover: (event: NewsEvent | null) => void;
   /** Fires whenever the visible range changes (pan / zoom / resize) */
@@ -45,7 +43,7 @@ const SENTIMENT_COLOR: Record<NewsEvent["sentiment"], string> = {
 };
 
 const StockChart = forwardRef<StockChartHandle, StockChartProps>(
-  ({ bars, events, secFilings, activeEventTime, onChartEventHover, onViewChange, movingAverages }, ref) => {
+  ({ bars, events, activeEventTime, onChartEventHover, onViewChange, movingAverages }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,28 +138,14 @@ const StockChart = forwardRef<StockChartHandle, StockChartProps>(
       }
 
       // ── Event markers (news + SEC filings) ───────────────────────────────
-      // Snap a date string to the nearest available bar on or after that date
-      const snapDate = (date: string): string =>
-        bars.find((b) => b.time >= date)?.time ?? date;
-
-      const allMarkers = [
-        ...events.map((ev) => ({
-          time: ev.time as Time,
-          position: "aboveBar" as const,
-          color: SENTIMENT_COLOR[ev.sentiment],
-          shape: ev.sentiment === "negative" ? ("arrowDown" as const) : ("arrowUp" as const),
-          text: ev.title.length > 22 ? ev.title.slice(0, 22) + "…" : ev.title,
-          size: 2,
-        })),
-        ...(secFilings ?? []).map((f) => ({
-          time: snapDate(f.date) as Time,
-          position: "belowBar" as const,
-          color: f.form === "4" ? "#f97316" : "#6366f1",
-          shape: "square" as const,
-          text: f.form,
-          size: 1,
-        })),
-      ].sort((a, b) => (a.time < b.time ? -1 : 1));
+      const allMarkers = events.map((ev) => ({
+        time: ev.time as Time,
+        position: "aboveBar" as const,
+        color: SENTIMENT_COLOR[ev.sentiment],
+        shape: ev.sentiment === "negative" ? ("arrowDown" as const) : ("arrowUp" as const),
+        text: ev.title.length > 22 ? ev.title.slice(0, 22) + "…" : ev.title,
+        size: 2,
+      }));
 
       createSeriesMarkers(series, allMarkers);
 
@@ -187,7 +171,7 @@ const StockChart = forwardRef<StockChartHandle, StockChartProps>(
         volumeSeriesRef.current = null;
         maSeriesRef.current = [];
       };
-    }, [bars, events, secFilings]);
+    }, [bars, events]);
 
     // ── Moving average lines (separate effect — no chart flicker on toggle) ──
     useEffect(() => {
