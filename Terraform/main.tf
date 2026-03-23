@@ -54,6 +54,7 @@ module "secrets" {
   db_host         = module.rds.db_host
   db_name         = var.db_name
   polygon_api_key = var.polygon_api_key
+  jwt_secret_key  = var.jwt_secret_key
 }
 
 resource "aws_iam_policy" "secrets_policy" {
@@ -150,6 +151,9 @@ module "ec2" {
   aws_region     = var.aws_region
   log_group_name = aws_cloudwatch_log_group.pipeline_logs.name
   secret_name    = var.secret_name
+  frontend_url   = var.frontend_url
+  secret_policy_arn = aws_iam_policy.secrets_policy.arn
+  s3_policy_arn     = aws_iam_policy.s3_limited_policy.arn
   tags = {
     Name = "stock-pipeline-app"
   }
@@ -167,45 +171,6 @@ module "rds" {
   db_username = var.db_username
   db_password = var.db_password
   db_name     = var.db_name
-}
-
-# ----------------------
-# Attach IAM Policies
-# ----------------------
-resource "aws_iam_role_policy_attachment" "attach_secret_policy" {
-  role       = module.ec2.ec2_role_name
-  policy_arn = aws_iam_policy.secrets_policy.arn
-}
-
-resource "aws_iam_role_policy_attachment" "attach_s3_policy" {
-  role       = module.ec2.ec2_role_name
-  policy_arn = aws_iam_policy.s3_limited_policy.arn
-}
-
-resource "aws_iam_role_policy_attachment" "attach_ssm_policy" {
-  role       = module.ec2.ec2_role_name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_role_policy" "cloudwatch_logs" {
-  name = "stock-pipeline-cloudwatch-logs"
-  role = module.ec2.ec2_role_name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogStream",
-          "logs:CreateLogGroup",
-          "logs:PutLogEvents",
-          "logs:DescribeLogStreams"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
 }
 
 resource "aws_cloudwatch_metric_alarm" "high_cpu" {
@@ -242,7 +207,7 @@ resource "aws_scheduler_schedule" "daily_pipeline" {
       InstanceIds  = [module.ec2.instance_id]
       Parameters = {
         commands = [
-          "/home/ec2-user/run_pipeline.sh >> /home/ec2-user/pipeline.log 2>&1"
+          "/home/ec2-user/run_daily_update.sh >> /home/ec2-user/daily_update.log 2>&1"
         ]
       }
     })

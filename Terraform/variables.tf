@@ -25,6 +25,12 @@ variable "polygon_api_key" {
   sensitive = true
 }
 
+variable "jwt_secret_key" {
+  description = "JWT signing secret for backend auth"
+  type        = string
+  sensitive   = true
+}
+
 variable "secret_name" {
   type = string
 }
@@ -33,4 +39,9 @@ variable "aws_region" {
   description = "AWS region for deployed resources and EC2 runtime config"
   type        = string
   default     = "ca-central-1"
+}
+
+variable "frontend_url" {
+  description = "Allowed frontend origin for backend CORS"
+  type        = string
 }

@@ -15,7 +15,8 @@ from . import cache
 from .models import SECFiling
 
 _email = os.environ.get("SEC_USER_AGENT_EMAIL", "")
-HEADERS = {"User-Agent": f"ChronoStock {_email}"}
+USER_AGENT = f"ChronoStock {_email}".strip()
+HEADERS = {"User-Agent": USER_AGENT}
 
 ITEM_LABELS: dict[str, str] = {
     "1.01": "Material Agreement",
