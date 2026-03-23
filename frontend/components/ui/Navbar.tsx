@@ -22,6 +22,27 @@ export default function Navbar({ showSearch = false }: { showSearch?: boolean })
         </span>
       </Link>
 
+      <Link
+        href="/"
+        className="text-sm text-slate-400 hover:text-slate-200 transition-colors px-1 shrink-0"
+      >
+        Home
+      </Link>
+      <Link
+        href="/compare"
+        className="text-sm text-slate-400 hover:text-slate-200 transition-colors px-1 shrink-0"
+      >
+        Compare
+      </Link>
+      {user && (
+        <Link
+          href="/watchlist"
+          className="text-sm text-slate-400 hover:text-slate-200 transition-colors px-1 shrink-0"
+        >
+          Watchlist
+        </Link>
+      )}
+
       {showSearch && (
         <div className="flex-1 flex justify-center px-4">
           <SearchBar />
