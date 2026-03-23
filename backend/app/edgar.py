@@ -6,14 +6,16 @@ Pipeline:
 
 Rate limit: 10 req/sec. User-Agent header is required by SEC.
 """
-from datetime import datetime, timedelta, timezone
+
+import os
 
 import httpx
 
 from . import cache
 from .models import SECFiling
 
-HEADERS = {"User-Agent": "ChronoStock qixiangfan03@gmail.com"}
+_email = os.environ.get("SEC_USER_AGENT_EMAIL", "")
+HEADERS = {"User-Agent": f"ChronoStock {_email}"}
 
 ITEM_LABELS: dict[str, str] = {
     "1.01": "Material Agreement",
@@ -37,17 +39,14 @@ ITEM_LABELS: dict[str, str] = {
 def _get_cik(ticker: str) -> str | None:
     """Return zero-padded 10-digit CIK for a ticker, or None if not found."""
     CACHE_KEY = "sec:cik_map"
-    CACHE_TTL_HOURS = 24
 
     cached = cache.get(CACHE_KEY)
     if cached:
-        cached_at = datetime.fromisoformat(cached["cached_at"])
-        if datetime.now(timezone.utc) - cached_at < timedelta(hours=CACHE_TTL_HOURS):
-            ticker_map: dict[str, int] = cached["data"]
-            cik_int = ticker_map.get(ticker.upper())
-            if cik_int is None:
-                return None
-            return str(cik_int).zfill(10)
+        ticker_map: dict[str, int] = cached["data"]
+        cik_int = ticker_map.get(ticker.upper())
+        if cik_int is None:
+            return None
+        return str(cik_int).zfill(10)
 
     # Download the full ticker→CIK mapping from SEC
     resp = httpx.get(
@@ -61,10 +60,7 @@ def _get_cik(ticker: str) -> str | None:
     # Build a flat {TICKER: cik_int} map
     ticker_map = {entry["ticker"].upper(): entry["cik_str"] for entry in raw.values()}
 
-    cache.set(CACHE_KEY, {
-        "cached_at": datetime.now(timezone.utc).isoformat(),
-        "data": ticker_map,
-    })
+    cache.set(CACHE_KEY, {"data": ticker_map})
 
     cik_int = ticker_map.get(ticker.upper())
     if cik_int is None:
@@ -72,7 +68,7 @@ def _get_cik(ticker: str) -> str | None:
     return str(cik_int).zfill(10)
 
 
-def fetch_sec_filings(ticker: str, limit: int = 60) -> list[SECFiling]:
+def fetch_sec_filings(ticker: str) -> list[SECFiling]:
     """
     Fetch recent 8-K and Form 4 filings for a ticker from SEC EDGAR.
     Returns a list sorted by date descending.
@@ -131,8 +127,6 @@ def fetch_sec_filings(ticker: str, limit: int = 60) -> list[SECFiling]:
             url=url,
         ))
 
-        if len(results) >= limit:
-            break
 
     # Already in reverse-chronological order from EDGAR, but sort to be safe
     results.sort(key=lambda f: f.date, reverse=True)

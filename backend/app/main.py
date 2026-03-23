@@ -308,9 +308,11 @@ def trending():
 def signup(body: UserCreate):
     conn = get_conn()
     try:
-        existing = conn.execute(
-            "SELECT id FROM users WHERE email = ?", (body.email,)
-        ).fetchone()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM users WHERE email = %s", (body.email,)
+            )
+            existing = cur.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -318,10 +320,11 @@ def signup(body: UserCreate):
         created_at = datetime.now(timezone.utc).isoformat()
         hashed = hash_password(body.password)
 
-        conn.execute(
-            "INSERT INTO users (id, email, hashed_password, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, body.email, hashed, created_at),
-        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (id, email, hashed_password, created_at) VALUES (%s, %s, %s, %s)",
+                (user_id, body.email, hashed, created_at),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -334,9 +337,11 @@ def signup(body: UserCreate):
 def login(body: UserCreate):
     conn = get_conn()
     try:
-        row = conn.execute(
-            "SELECT id, email, hashed_password FROM users WHERE email = ?", (body.email,)
-        ).fetchone()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, email, hashed_password FROM users WHERE email = %s", (body.email,)
+            )
+            row = cur.fetchone()
     finally:
         conn.close()
 
@@ -358,10 +363,12 @@ def me(current_user: dict = Depends(get_current_user)):
 def get_watchlist(current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     try:
-        rows = conn.execute(
-            "SELECT ticker, added_at FROM watchlist WHERE user_id = ? ORDER BY added_at DESC",
-            (current_user["sub"],),
-        ).fetchall()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ticker, added_at FROM watchlist WHERE user_id = %s ORDER BY added_at DESC",
+                (current_user["sub"],),
+            )
+            rows = cur.fetchall()
     finally:
         conn.close()
     return [WatchlistItem(ticker=row["ticker"], added_at=row["added_at"]) for row in rows]
@@ -373,10 +380,11 @@ def add_to_watchlist(ticker: str, current_user: dict = Depends(get_current_user)
     added_at = datetime.now(timezone.utc).isoformat()
     conn = get_conn()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO watchlist (user_id, ticker, added_at) VALUES (?, ?, ?)",
-            (current_user["sub"], ticker, added_at),
-        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO watchlist (user_id, ticker, added_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                (current_user["sub"], ticker, added_at),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -387,10 +395,11 @@ def remove_from_watchlist(ticker: str, current_user: dict = Depends(get_current_
     ticker = ticker.upper()
     conn = get_conn()
     try:
-        conn.execute(
-            "DELETE FROM watchlist WHERE user_id = ? AND ticker = ?",
-            (current_user["sub"], ticker),
-        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM watchlist WHERE user_id = %s AND ticker = %s",
+                (current_user["sub"], ticker),
+            )
         conn.commit()
     finally:
         conn.close()
