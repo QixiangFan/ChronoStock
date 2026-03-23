@@ -5,7 +5,7 @@ AI-powered market intelligence that transforms stock charts into explorable narr
 **Guests** see the live price chart and key fundamentals for any ticker. **Signed-in users** unlock AI-powered event analysis overlaid on the chart and a personal watchlist.
 
 <!-- coverage:start -->
-## Test Coverage
+## Frontend Test Coverage
 
 ![Coverage](https://img.shields.io/badge/coverage-98.35%25-brightgreen)
 
@@ -16,7 +16,7 @@ AI-powered market intelligence that transforms stock charts into explorable narr
 | Branches | 84.89% |
 | Functions | 92.55% |
 
-_This section is updated automatically by GitHub Actions._
+_This section reports frontend Jest coverage and is updated automatically by GitHub Actions._
 <!-- coverage:end -->
 
 ---

@@ -92,7 +92,7 @@ function pickColor(value) {
 
 const badge = `![Coverage](https://img.shields.io/badge/coverage-${lines}%25-${pickColor(lines)})`;
 const section = [
-  "## Test Coverage",
+  "## Frontend Test Coverage",
   "",
   `${badge}`,
   "",
@@ -103,7 +103,7 @@ const section = [
   `| Branches | ${branches}% |`,
   `| Functions | ${functions}% |`,
   "",
-  "_This section is updated automatically by GitHub Actions._",
+  "_This section reports frontend Jest coverage and is updated automatically by GitHub Actions._",
 ].join("\n");
 
 const start = "<!-- coverage:start -->";
