@@ -1,0 +1,129 @@
+name: Frontend Coverage
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run test coverage
+        run: npm run test:coverage -- --runInBand
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage-report
+          path: frontend/coverage
+
+      - name: Build coverage summary
+        id: summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const summary = JSON.parse(
+              fs.readFileSync("frontend/coverage/coverage-summary.json", "utf8")
+            );
+            const totals = summary.total;
+            const lines = totals.lines.pct.toFixed(2);
+            const statements = totals.statements.pct.toFixed(2);
+            const branches = totals.branches.pct.toFixed(2);
+            const functions = totals.functions.pct.toFixed(2);
+            const body = [
+              "## Frontend Coverage",
+              "",
+              "| Metric | Coverage |",
+              "| --- | ---: |",
+              `| Lines | ${lines}% |`,
+              `| Statements | ${statements}% |`,
+              `| Branches | ${branches}% |`,
+              `| Functions | ${functions}% |`,
+            ].join("\n");
+
+            core.setOutput("lines", lines);
+            core.setOutput("body", body);
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          COVERAGE_BODY: ${{ steps.summary.outputs.body }}
+        with:
+          script: |
+            const body = process.env.COVERAGE_BODY;
+            const issue_number = context.payload.pull_request.number;
+            const marker = "<!-- frontend-coverage-comment -->";
+            const fullBody = `${marker}\n${body}`;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+              }
+            );
+
+            const existing = comments.find((comment) =>
+              comment.user?.type === "Bot" && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body: fullBody,
+              });
+            }
+
+      - name: Update README coverage section
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node ../scripts/update-readme-coverage.mjs
+
+      - name: Commit README coverage update
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- ../README.md; then
+            git add ../README.md
+            git commit -m "chore: update coverage badge [skip ci]"
+            git push
+          fi
