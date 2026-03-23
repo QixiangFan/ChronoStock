@@ -72,9 +72,34 @@ class WatchlistItem(BaseModel):
     added_at: str
 
 
+class EarningsDate(BaseModel):
+    date: str                          # "YYYY-MM-DD"
+    epsEstimate: Optional[float] = None
+    reportedEps: Optional[float] = None
+    surprisePct: Optional[float] = None   # positive = beat, negative = miss
+
+
+class StockNews(BaseModel):
+    id: str
+    time: str                    # "YYYY-MM-DD"
+    title: str
+    publisher: str
+    url: Optional[str] = None
+    summary: Optional[str] = None
+    thumbnail: Optional[str] = None
+
+
 class TrendingItem(BaseModel):
     ticker: str
     companyName: str
     price: Optional[float] = None
     change: Optional[float] = None
     changePct: Optional[float] = None
+
+
+class SECFiling(BaseModel):
+    date: str           # "YYYY-MM-DD" (filingDate)
+    form: str           # "8-K" or "4"
+    items: list[str]    # ["1.01", "5.02"] — empty for Form 4
+    label: str          # human-readable event description
+    url: str            # full sec.gov filing URL
