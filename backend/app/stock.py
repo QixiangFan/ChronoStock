@@ -39,10 +39,18 @@ def _unix_to_date(ts) -> str | None:
         return None
 
 
-def fetch_info(ticker: str) -> tuple[str, StockMeta]:
+_QUOTE_TYPE_MAP = {
+    "EQUITY": "equity",
+    "INDEX": "index",
+    "CRYPTOCURRENCY": "crypto",
+    "ETF": "etf",
+}
+
+
+def fetch_info(ticker: str) -> tuple[str, StockMeta, str]:
     """
-    Single yfinance call that returns (companyName, StockMeta).
-    Avoids calling .info twice.
+    Single yfinance call that returns (companyName, StockMeta, assetType).
+    assetType is one of: "equity" | "index" | "crypto" | "etf" | "unknown"
     """
     info = yf.Ticker(ticker).info
 
@@ -82,7 +90,8 @@ def fetch_info(ticker: str) -> tuple[str, StockMeta]:
         earningsDate=_unix_to_date(info.get("earningsTimestamp")),
     )
 
-    return company_name, meta
+    asset_type = _QUOTE_TYPE_MAP.get(info.get("quoteType", "").upper(), "unknown")
+    return company_name, meta, asset_type
 
 
 def fetch_earnings_dates(ticker: str) -> list[EarningsDate]:
