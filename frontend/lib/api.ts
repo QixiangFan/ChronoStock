@@ -14,7 +14,7 @@ import { StockData } from "@/types";
 
 // Stock data + search → real backend
 // Auth + watchlist → still mocked (linked later)
-const MOCK_AUTH = true;
+const MOCK_AUTH = false;
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // In-memory mock watchlist
@@ -33,6 +33,43 @@ export async function searchTickers(query: string): Promise<{ ticker: string; co
   return res.json();
 }
 
+export interface EarningsDate {
+  date: string;
+  epsEstimate?: number;
+  reportedEps?: number;
+  surprisePct?: number;
+}
+
+export async function fetchEarnings(ticker: string): Promise<EarningsDate[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/earnings/${ticker}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export interface StockNews {
+  id: string;
+  time: string;
+  title: string;
+  publisher: string;
+  url?: string;
+  summary?: string;
+  thumbnail?: string;
+}
+
+export async function fetchNews(ticker: string): Promise<StockNews[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/news/${ticker}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 export interface TrendingItem {
   ticker: string;
   companyName: string;
@@ -41,9 +78,38 @@ export interface TrendingItem {
   changePct?: number;
 }
 
+export async function fetchPrices(tickers: string[]): Promise<TrendingItem[]> {
+  if (tickers.length === 0) return [];
+  try {
+    const res = await fetch(`${API_BASE}/api/prices?tickers=${tickers.join(",")}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchTrending(): Promise<TrendingItem[]> {
   try {
     const res = await fetch(`${API_BASE}/api/trending`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export interface SECFiling {
+  date: string;
+  form: string;       // "8-K" | "4"
+  items: string[];    // ["1.01", "5.02"]
+  label: string;      // human-readable description
+  url: string;        // link to sec.gov filing
+}
+
+export async function fetchSECFilings(ticker: string): Promise<SECFiling[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/sec/${ticker}`);
     if (!res.ok) return [];
     return res.json();
   } catch {

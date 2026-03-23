@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 // Set to true to use mock auth (no real API calls)
-const MOCK_AUTH = true;
+const MOCK_AUTH = false;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 

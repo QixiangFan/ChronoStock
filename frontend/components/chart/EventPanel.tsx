@@ -45,7 +45,7 @@ export default function EventPanel({
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   return (
-    <div className="flex flex-col gap-2 overflow-y-auto h-full pr-1">
+    <div className="flex flex-col gap-2 pr-1">
       <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1 shrink-0">
         Key Events
       </p>
