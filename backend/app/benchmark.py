@@ -245,6 +245,7 @@ def _run_cache_single(args: argparse.Namespace) -> int:
 
 def _run_cache_compare(args: argparse.Namespace) -> int:
     backends = args.compare or ["local", "redis"]
+    ret = 0
     for backend in backends:
         cmd = [
             sys.executable,
@@ -272,8 +273,9 @@ def _run_cache_compare(args: argparse.Namespace) -> int:
 
         print(f"\nRunning CACHE_BACKEND={backend}")
         completed = subprocess.run(cmd, check=False)
-        return completed.returncode
-    return 0
+        if completed.returncode != 0:
+            ret = completed.returncode
+    return ret
 
 
 def main() -> int:
