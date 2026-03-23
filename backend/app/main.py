@@ -12,7 +12,7 @@ from .models import OHLCBar, StockResponse, SearchResult, UserCreate, Token, Wat
 from .stock import fetch_bars, fetch_info, search_tickers, fetch_news, fetch_earnings_dates
 from .edgar import fetch_sec_filings
 from . import cache
-from .database import init_db, get_conn
+from .database import init_db, get_conn, cursor as db_cursor, PH
 from .auth import hash_password, verify_password, create_token, get_current_user
 
 app = FastAPI(title="ChronoStock API", version="0.1.0")
@@ -308,9 +308,9 @@ def trending():
 def signup(body: UserCreate):
     conn = get_conn()
     try:
-        with conn.cursor() as cur:
+        with db_cursor(conn) as cur:
             cur.execute(
-                "SELECT id FROM users WHERE email = %s", (body.email,)
+                f"SELECT id FROM users WHERE email = {PH}", (body.email,)
             )
             existing = cur.fetchone()
         if existing:
@@ -320,9 +320,9 @@ def signup(body: UserCreate):
         created_at = datetime.now(timezone.utc).isoformat()
         hashed = hash_password(body.password)
 
-        with conn.cursor() as cur:
+        with db_cursor(conn) as cur:
             cur.execute(
-                "INSERT INTO users (id, email, hashed_password, created_at) VALUES (%s, %s, %s, %s)",
+                f"INSERT INTO users (id, email, hashed_password, created_at) VALUES ({PH}, {PH}, {PH}, {PH})",
                 (user_id, body.email, hashed, created_at),
             )
         conn.commit()
@@ -337,9 +337,9 @@ def signup(body: UserCreate):
 def login(body: UserCreate):
     conn = get_conn()
     try:
-        with conn.cursor() as cur:
+        with db_cursor(conn) as cur:
             cur.execute(
-                "SELECT id, email, hashed_password FROM users WHERE email = %s", (body.email,)
+                f"SELECT id, email, hashed_password FROM users WHERE email = {PH}", (body.email,)
             )
             row = cur.fetchone()
     finally:
@@ -363,9 +363,9 @@ def me(current_user: dict = Depends(get_current_user)):
 def get_watchlist(current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     try:
-        with conn.cursor() as cur:
+        with db_cursor(conn) as cur:
             cur.execute(
-                "SELECT ticker, added_at FROM watchlist WHERE user_id = %s ORDER BY added_at DESC",
+                f"SELECT ticker, added_at FROM watchlist WHERE user_id = {PH} ORDER BY added_at DESC",
                 (current_user["sub"],),
             )
             rows = cur.fetchall()
@@ -380,9 +380,9 @@ def add_to_watchlist(ticker: str, current_user: dict = Depends(get_current_user)
     added_at = datetime.now(timezone.utc).isoformat()
     conn = get_conn()
     try:
-        with conn.cursor() as cur:
+        with db_cursor(conn) as cur:
             cur.execute(
-                "INSERT INTO watchlist (user_id, ticker, added_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                f"INSERT INTO watchlist (user_id, ticker, added_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT DO NOTHING",
                 (current_user["sub"], ticker, added_at),
             )
         conn.commit()
@@ -395,9 +395,9 @@ def remove_from_watchlist(ticker: str, current_user: dict = Depends(get_current_
     ticker = ticker.upper()
     conn = get_conn()
     try:
-        with conn.cursor() as cur:
+        with db_cursor(conn) as cur:
             cur.execute(
-                "DELETE FROM watchlist WHERE user_id = %s AND ticker = %s",
+                f"DELETE FROM watchlist WHERE user_id = {PH} AND ticker = {PH}",
                 (current_user["sub"], ticker),
             )
         conn.commit()
