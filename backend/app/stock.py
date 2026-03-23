@@ -124,11 +124,13 @@ def fetch_earnings_dates(ticker: str) -> list[EarningsDate]:
     return items
 
 
-def fetch_news(ticker: str) -> list[StockNews]:
-    """Fetch up to 12 recent news articles for a ticker via yfinance."""
+def fetch_news(ticker: str, limit: int = 12) -> list[StockNews]:
+    """Fetch a broad set of recent/historical news for a ticker via yfinance."""
     raw = yf.Ticker(ticker).news or []
     items: list[StockNews] = []
-    for i, article in enumerate(raw[:12]):
+    seen_ids: set[str] = set()
+    capped_limit = max(1, min(int(limit), 500))
+    for i, article in enumerate(raw[:capped_limit]):
         # yfinance ≥1.2 wraps fields under a 'content' key
         content = article.get("content") or article
         title = content.get("title") or ""
@@ -167,8 +169,13 @@ def fetch_news(ticker: str) -> list[StockNews]:
             best = max(resolutions, key=lambda r: r.get("width", 0))
             thumbnail = best.get("url")
 
+        item_id = str(article.get("id") or i)
+        if item_id in seen_ids:
+            continue
+        seen_ids.add(item_id)
+
         items.append(StockNews(
-            id=article.get("id") or str(i),
+            id=item_id,
             time=date_str,
             title=title,
             publisher=publisher,
@@ -176,6 +183,8 @@ def fetch_news(ticker: str) -> list[StockNews]:
             summary=summary,
             thumbnail=thumbnail,
         ))
+    # Most recent first
+    items.sort(key=lambda n: n.time, reverse=True)
     return items
 
 

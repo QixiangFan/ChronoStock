@@ -159,7 +159,7 @@ def get_news(ticker: str):
                 return [StockNews(**item) for item in cached["items"]]
 
     try:
-        items = fetch_news(ticker)
+        items = fetch_news(ticker, limit=250)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"News fetch error: {e}")
 

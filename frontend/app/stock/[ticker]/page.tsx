@@ -12,7 +12,7 @@ import NewsPanel from "@/components/chart/NewsPanel";
 import SECPanel from "@/components/chart/SECPanel";
 import Navbar from "@/components/ui/Navbar";
 import { useAuth } from "@/contexts/AuthContext";
-import { FileChartColumn, ExternalLink, ArrowLeftRight, Landmark } from "lucide-react";
+import { FileChartColumn, ExternalLink, ArrowLeftRight, Landmark, Newspaper } from "lucide-react";
 
 // ── Time range ────────────────────────────────────────────────────────────────
 
@@ -406,6 +406,14 @@ export default function StockPage() {
                       {data.companyName}
                     </span>
                   </h2>
+
+                  <Link
+                    href={`/stock/${ticker}/news?range=${range}`}
+                    className="flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium border bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                  >
+                    <Newspaper className="w-3.5 h-3.5" />
+                    News
+                  </Link>
 
                   {/* Watchlist button */}
                   {user ? (
