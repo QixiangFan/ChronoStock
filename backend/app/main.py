@@ -12,7 +12,7 @@ from .models import OHLCBar, StockResponse, SearchResult, UserCreate, Token, Wat
 from .stock import fetch_bars, fetch_info, search_tickers, fetch_news, fetch_earnings_dates
 from .edgar import fetch_sec_filings
 from . import cache
-from .database import init_db, get_conn
+from .database import init_db, get_conn, cursor as db_cursor, PH
 from .auth import hash_password, verify_password, create_token, get_current_user
 
 app = FastAPI(title="ChronoStock API", version="0.1.0")
@@ -308,9 +308,11 @@ def trending():
 def signup(body: UserCreate):
     conn = get_conn()
     try:
-        existing = conn.execute(
-            "SELECT id FROM users WHERE email = ?", (body.email,)
-        ).fetchone()
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"SELECT id FROM users WHERE email = {PH}", (body.email,)
+            )
+            existing = cur.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -318,10 +320,11 @@ def signup(body: UserCreate):
         created_at = datetime.now(timezone.utc).isoformat()
         hashed = hash_password(body.password)
 
-        conn.execute(
-            "INSERT INTO users (id, email, hashed_password, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, body.email, hashed, created_at),
-        )
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"INSERT INTO users (id, email, hashed_password, created_at) VALUES ({PH}, {PH}, {PH}, {PH})",
+                (user_id, body.email, hashed, created_at),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -334,9 +337,11 @@ def signup(body: UserCreate):
 def login(body: UserCreate):
     conn = get_conn()
     try:
-        row = conn.execute(
-            "SELECT id, email, hashed_password FROM users WHERE email = ?", (body.email,)
-        ).fetchone()
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"SELECT id, email, hashed_password FROM users WHERE email = {PH}", (body.email,)
+            )
+            row = cur.fetchone()
     finally:
         conn.close()
 
@@ -358,10 +363,12 @@ def me(current_user: dict = Depends(get_current_user)):
 def get_watchlist(current_user: dict = Depends(get_current_user)):
     conn = get_conn()
     try:
-        rows = conn.execute(
-            "SELECT ticker, added_at FROM watchlist WHERE user_id = ? ORDER BY added_at DESC",
-            (current_user["sub"],),
-        ).fetchall()
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"SELECT ticker, added_at FROM watchlist WHERE user_id = {PH} ORDER BY added_at DESC",
+                (current_user["sub"],),
+            )
+            rows = cur.fetchall()
     finally:
         conn.close()
     return [WatchlistItem(ticker=row["ticker"], added_at=row["added_at"]) for row in rows]
@@ -373,10 +380,11 @@ def add_to_watchlist(ticker: str, current_user: dict = Depends(get_current_user)
     added_at = datetime.now(timezone.utc).isoformat()
     conn = get_conn()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO watchlist (user_id, ticker, added_at) VALUES (?, ?, ?)",
-            (current_user["sub"], ticker, added_at),
-        )
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"INSERT INTO watchlist (user_id, ticker, added_at) VALUES ({PH}, {PH}, {PH}) ON CONFLICT DO NOTHING",
+                (current_user["sub"], ticker, added_at),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -387,10 +395,11 @@ def remove_from_watchlist(ticker: str, current_user: dict = Depends(get_current_
     ticker = ticker.upper()
     conn = get_conn()
     try:
-        conn.execute(
-            "DELETE FROM watchlist WHERE user_id = ? AND ticker = ?",
-            (current_user["sub"], ticker),
-        )
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"DELETE FROM watchlist WHERE user_id = {PH} AND ticker = {PH}",
+                (current_user["sub"], ticker),
+            )
         conn.commit()
     finally:
         conn.close()

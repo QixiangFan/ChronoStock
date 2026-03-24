@@ -12,7 +12,7 @@ import NewsPanel from "@/components/chart/NewsPanel";
 import SECPanel from "@/components/chart/SECPanel";
 import Navbar from "@/components/ui/Navbar";
 import { useAuth } from "@/contexts/AuthContext";
-import { FileChartColumn } from "lucide-react";
+import { FileChartColumn, ExternalLink, ArrowLeftRight, Landmark } from "lucide-react";
 
 // ── Time range ────────────────────────────────────────────────────────────────
 
@@ -82,10 +82,20 @@ export default function StockPage() {
   const [earnings, setEarnings] = useState<EarningsDate[]>([]);
   const [secFilings, setSecFilings] = useState<SECFiling[]>([]);
   const [showEarnings, setShowEarnings] = useState(false);
+  const [show8K, setShow8K] = useState(false);
+  const [showForm4, setShowForm4] = useState(false);
   const [activeMAs, setActiveMAs] = useState<Set<number>>(new Set());
   const [expandedEarning, setExpandedEarning] = useState<string | null>(null);
   const [earningPositions, setEarningPositions] = useState<
     { date: string; x: number; y: number; earning: EarningsDate }[]
+  >([]);
+  const [expandedForm4, setExpandedForm4] = useState<string | null>(null);
+  const [form4Positions, setForm4Positions] = useState<
+    { date: string; x: number; y: number; filings: SECFiling[] }[]
+  >([]);
+  const [expanded8K, setExpanded8K] = useState<string | null>(null);
+  const [eightKPositions, setEightKPositions] = useState<
+    { date: string; x: number; y: number; filings: SECFiling[] }[]
   >([]);
 
   const [inWatchlist, setInWatchlist] = useState(false);
@@ -140,11 +150,53 @@ export default function StockPage() {
     return secFilings.filter((f) => f.date >= from && f.date <= to);
   }, [secFilings, filteredBars]);
 
+
+  // Map each earnings date to its SEC 8-K Earnings Release filing (item 2.02), within ±5 days
+  const earningsToSECLink = useMemo(() => {
+    const map = new Map<string, string>();
+    const earningsFilings = secFilings.filter(
+      (f) => f.form === "8-K" && f.items.includes("2.02")
+    );
+    for (const earning of earnings) {
+      const earningTs = new Date(earning.date + "T00:00:00Z").getTime();
+      const match = earningsFilings.find((f) => {
+        const filingTs = new Date(f.date + "T00:00:00Z").getTime();
+        return Math.abs(filingTs - earningTs) <= 5 * 86400 * 1000;
+      });
+      if (match) map.set(earning.date, match.url);
+    }
+    return map;
+  }, [secFilings, earnings]);
+
+  // Group visible Form 4 filings by date
+  const form4ByDate = useMemo(() => {
+    const map = new Map<string, SECFiling[]>();
+    filteredSEC.filter((f) => f.form === "4").forEach((f) => {
+      if (!map.has(f.date)) map.set(f.date, []);
+      map.get(f.date)!.push(f);
+    });
+    return Array.from(map.entries()).map(([date, filings]) => ({ date, filings }));
+  }, [filteredSEC]);
+
+  // Group visible 8-K filings by date — exclude earnings releases (item 2.02) since those overlap with earnings badges
+  const eightKByDate = useMemo(() => {
+    const map = new Map<string, SECFiling[]>();
+    filteredSEC.filter((f) => f.form === "8-K" && !f.items.includes("2.02")).forEach((f) => {
+      if (!map.has(f.date)) map.set(f.date, []);
+      map.get(f.date)!.push(f);
+    });
+    return Array.from(map.entries()).map(([date, filings]) => ({ date, filings }));
+  }, [filteredSEC]);
+
   // Refs so the stable callback always reads the latest values
   const filteredEarningsRef = useRef<EarningsDate[]>([]);
   filteredEarningsRef.current = filteredEarnings;
   const filteredBarsRef = useRef<OHLCBar[]>([]);
   filteredBarsRef.current = filteredBars;
+  const form4ByDateRef = useRef<{ date: string; filings: SECFiling[] }[]>([]);
+  form4ByDateRef.current = form4ByDate;
+  const eightKByDateRef = useRef<{ date: string; filings: SECFiling[] }[]>([]);
+  eightKByDateRef.current = eightKByDate;
 
   // Stable callback — called on every pan / zoom / resize and on data change
   const computeEarningPositions = useCallback(() => {
@@ -182,6 +234,65 @@ export default function StockPage() {
     const timer = setTimeout(computeEarningPositions, 250);
     return () => clearTimeout(timer);
   }, [filteredEarnings, computeEarningPositions]);
+
+  const computeForm4Positions = useCallback(() => {
+    if (!chartRef.current || !chartContainerRef.current) return;
+    const rect = chartContainerRef.current.getBoundingClientRect();
+    const chartWidth = chartContainerRef.current.clientWidth;
+    const chartHeight = chartContainerRef.current.clientHeight;
+    const currentBars = filteredBarsRef.current;
+
+    const positions = form4ByDateRef.current.flatMap(({ date, filings }) => {
+      // Snap to the nearest trading day bar — use bar.time for both x and y
+      // so weekend/holiday filing dates don't produce invalid coordinates
+      const bar = currentBars.find((b) => b.time >= date) ?? null;
+      if (!bar) return [];
+      const pos = chartRef.current!.getPositionForDate(bar.time, bar.close);
+      if (!pos) return [];
+      if (pos.x < 0 || pos.x > chartWidth - 70) return [];
+      if (pos.y < 0 || pos.y > chartHeight) return [];
+      return [{ date, x: rect.left + pos.x, y: rect.top + pos.y, filings }];
+    });
+    setForm4Positions(positions);
+  }, []);
+
+  useEffect(() => {
+    // Hide Form 4 badges on long ranges — too many to be readable
+    if (!form4ByDate.length || range === "5Y" || range === "ALL") {
+      setForm4Positions([]);
+      return;
+    }
+    const timer = setTimeout(computeForm4Positions, 250);
+    return () => clearTimeout(timer);
+  }, [form4ByDate, range, computeForm4Positions]);
+
+  const compute8KPositions = useCallback(() => {
+    if (!chartRef.current || !chartContainerRef.current) return;
+    const rect = chartContainerRef.current.getBoundingClientRect();
+    const chartWidth = chartContainerRef.current.clientWidth;
+    const chartHeight = chartContainerRef.current.clientHeight;
+    const currentBars = filteredBarsRef.current;
+
+    const positions = eightKByDateRef.current.flatMap(({ date, filings }) => {
+      const bar = currentBars.find((b) => b.time >= date) ?? null;
+      if (!bar) return [];
+      const pos = chartRef.current!.getPositionForDate(bar.time, bar.close);
+      if (!pos) return [];
+      if (pos.x < 0 || pos.x > chartWidth - 70) return [];
+      if (pos.y < 0 || pos.y > chartHeight) return [];
+      return [{ date, x: rect.left + pos.x, y: rect.top + pos.y, filings }];
+    });
+    setEightKPositions(positions);
+  }, []);
+
+  useEffect(() => {
+    if (!eightKByDate.length || range === "5Y" || range === "ALL") {
+      setEightKPositions([]);
+      return;
+    }
+    const timer = setTimeout(compute8KPositions, 250);
+    return () => clearTimeout(timer);
+  }, [eightKByDate, range, compute8KPositions]);
 
   // SMA computation
   const movingAverages = useMemo(() => {
@@ -399,46 +510,53 @@ export default function StockPage() {
                 events={filteredEvents}
                 activeEventTime={activeEvent?.time ?? null}
                 onChartEventHover={handleChartEventHover}
-                onViewChange={computeEarningPositions}
+                onViewChange={() => { computeEarningPositions(); computeForm4Positions(); compute8KPositions(); }}
                 movingAverages={movingAverages}
-                secFilings={filteredSEC}
               />
             </div>
 
-            {/* Legend (only shown when logged in and there are events) */}
-            {user ? (
-              <div className="flex gap-4 text-xs text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-green-500" /> Positive
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-red-500" /> Negative
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Neutral
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full border border-green-400" style={{ boxShadow: "0 0 4px #4ade8088" }} />
-                  Earnings beat
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full border border-red-400" style={{ boxShadow: "0 0 4px #f8717188" }} />
-                  Earnings miss
-                </span>
-                <span className="ml-auto">
-                  Hover markers or cards to link · Click cards to expand
-                </span>
-              </div>
-            ) : (
-              <div className="text-xs text-slate-500">
-                <Link
-                  href="/login"
-                  className="text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  Sign in to see AI-powered event analysis overlaid on this chart →
-                </Link>
-              </div>
-            )}
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
+              {user && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-500" /> Positive News
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-500" /> Negative News
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" /> Neutral News
+                  </span>
+                </>
+              )}
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" /> 8-K
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-orange-500" /> Form 4
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full border border-green-400" style={{ boxShadow: "0 0 4px #4ade8088" }} />
+                Earnings beat
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full border border-red-400" style={{ boxShadow: "0 0 4px #f8717188" }} />
+                Earnings miss
+              </span>
+              <span className="ml-auto">
+                {user ? (
+                  "Hover markers or cards to link · Click cards to expand"
+                ) : (
+                  <Link
+                    href="/login"
+                    className="text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
+                  >
+                    Sign in for AI event analysis →
+                  </Link>
+                )}
+              </span>
+            </div>
           </div>
 
           {/* Sidebar */}
@@ -454,26 +572,62 @@ export default function StockPage() {
                 />
               </div>
             )}
-            {earnings.length > 0 && (
-              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileChartColumn className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                    Earnings Reports
-                  </span>
+            <div className="border-b border-slate-800">
+              <div className="px-4 pt-3 pb-2">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2">Chart Overlays</p>
+                <div className="flex flex-col gap-1">
+                  {earnings.length > 0 && (
+                    <div className="flex items-center justify-between py-1.5">
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <FileChartColumn className="w-3.5 h-3.5" />
+                        <span className="text-xs text-slate-300">Earnings Reports</span>
+                      </div>
+                      <button
+                        onClick={() => { setShowEarnings((v) => !v); setExpandedEarning(null); }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showEarnings ? "bg-indigo-600" : "bg-slate-700"}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${showEarnings ? "translate-x-5" : "translate-x-1"}`} />
+                      </button>
+                    </div>
+                  )}
+                  {(() => {
+                    const longRange = range === "5Y" || range === "ALL";
+                    return (
+                      <>
+                        <div className={`flex items-center justify-between py-1.5 ${longRange ? "opacity-40" : ""}`}>
+                          <div className="flex items-center gap-2" style={{ color: "#6366f1" }}>
+                            <Landmark className="w-3.5 h-3.5" />
+                            <span className="text-xs text-slate-300">8-K Filings</span>
+                            {longRange && <span className="text-[10px] text-slate-600">N/A for 5Y+</span>}
+                          </div>
+                          <button
+                            disabled={longRange}
+                            onClick={() => setShow8K((v) => !v)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${show8K && !longRange ? "bg-indigo-600" : "bg-slate-700"} ${longRange ? "cursor-not-allowed" : ""}`}
+                          >
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${show8K && !longRange ? "translate-x-5" : "translate-x-1"}`} />
+                          </button>
+                        </div>
+                        <div className={`flex items-center justify-between py-1.5 ${longRange ? "opacity-40" : ""}`}>
+                          <div className="flex items-center gap-2" style={{ color: "#f97316" }}>
+                            <ArrowLeftRight className="w-3.5 h-3.5" />
+                            <span className="text-xs text-slate-300">Form 4 Filings</span>
+                            {longRange && <span className="text-[10px] text-slate-600">N/A for 5Y+</span>}
+                          </div>
+                          <button
+                            disabled={longRange}
+                            onClick={() => setShowForm4((v) => !v)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showForm4 && !longRange ? "bg-indigo-600" : "bg-slate-700"} ${longRange ? "cursor-not-allowed" : ""}`}
+                          >
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${showForm4 && !longRange ? "translate-x-5" : "translate-x-1"}`} />
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
-                <button
-                  onClick={() => { setShowEarnings((v) => !v); setExpandedEarning(null); }}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    showEarnings ? "bg-indigo-600" : "bg-slate-700"
-                  }`}
-                >
-                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                    showEarnings ? "translate-x-5" : "translate-x-1"
-                  }`} />
-                </button>
               </div>
-            )}
+            </div>
             <SECPanel filings={secFilings} />
             <div className="p-4">
               <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
@@ -540,6 +694,119 @@ export default function StockPage() {
                         <span>{pos.earning.surprisePct > 0 ? "+" : ""}{pos.earning.surprisePct.toFixed(1)}%</span>
                       </div>
                     )}
+                    {earningsToSECLink.has(pos.date) && (
+                      <a
+                        href={earningsToSECLink.get(pos.date)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        <ExternalLink style={{ width: 10, height: 10 }} />
+                        SEC 8-K Filing
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* 8-K corporate event badges */}
+          {show8K && eightKPositions.map((pos) => {
+            const isExpanded = expanded8K === pos.date;
+            return (
+              <div
+                key={pos.date}
+                className="fixed z-30 pointer-events-none"
+                style={{ left: pos.x - 10, top: pos.y - 10, width: 20, height: 20 }}
+              >
+                <div
+                  className="pointer-events-auto cursor-pointer w-5 h-5 rounded-full flex items-center justify-center transition-transform hover:scale-125"
+                  title="8-K Filing"
+                  onClick={() => setExpanded8K(isExpanded ? null : pos.date)}
+                  style={{
+                    backgroundColor: "#0f172a",
+                    border: "1.5px solid #6366f1",
+                    boxShadow: "0 0 8px 2px #6366f155",
+                    color: "#6366f1",
+                  }}
+                >
+                  <Landmark style={{ width: 10, height: 10 }} />
+                </div>
+
+                {isExpanded && (
+                  <div
+                    className="pointer-events-auto absolute w-56 rounded-xl border border-slate-700 bg-slate-900 shadow-xl p-3 text-xs"
+                    style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="font-semibold text-indigo-400 mb-2">8-K Filings</p>
+                    <p className="text-slate-400 font-mono mb-2">{pos.date}</p>
+                    <div className="flex flex-col gap-1.5">
+                      {pos.filings.map((f, i) => (
+                        <a
+                          key={i}
+                          href={f.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between gap-1 text-slate-300 hover:text-indigo-300 transition-colors"
+                        >
+                          <span>{f.label}</span>
+                          <ExternalLink style={{ width: 10, height: 10, flexShrink: 0 }} />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Form 4 insider transaction badges */}
+          {showForm4 && form4Positions.map((pos) => {
+            const isExpanded = expandedForm4 === pos.date;
+            return (
+              <div
+                key={pos.date}
+                className="fixed z-30 pointer-events-none"
+                style={{ left: pos.x - 10, top: pos.y - 10, width: 20, height: 20 }}
+              >
+                <div
+                  className="pointer-events-auto cursor-pointer w-5 h-5 rounded-full flex items-center justify-center transition-transform hover:scale-125"
+                  title="Insider Transaction"
+                  onClick={() => setExpandedForm4(isExpanded ? null : pos.date)}
+                  style={{
+                    backgroundColor: "#0f172a",
+                    border: "1.5px solid #f97316",
+                    boxShadow: "0 0 8px 2px #f9731655",
+                    color: "#f97316",
+                  }}
+                >
+                  <ArrowLeftRight style={{ width: 10, height: 10 }} />
+                </div>
+
+                {isExpanded && (
+                  <div
+                    className="pointer-events-auto absolute w-52 rounded-xl border border-slate-700 bg-slate-900 shadow-xl p-3 text-xs"
+                    style={{ bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="font-semibold text-orange-400 mb-2">Insider Transactions</p>
+                    <p className="text-slate-400 font-mono mb-2">{pos.date}</p>
+                    <div className="flex flex-col gap-1.5">
+                      {pos.filings.map((f, i) => (
+                        <a
+                          key={i}
+                          href={f.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between gap-1 text-slate-300 hover:text-orange-300 transition-colors"
+                        >
+                          <span>{f.label}</span>
+                          <ExternalLink style={{ width: 10, height: 10, flexShrink: 0 }} />
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
