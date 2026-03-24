@@ -5,10 +5,14 @@ load_dotenv()
 from datetime import datetime, timezone
 from datetime import date, timedelta
 from typing import Literal
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
-from .models import OHLCBar, StockResponse, SearchResult, UserCreate, Token, WatchlistItem, TrendingItem, StockNews, EarningsDate, SECFiling
+from .models import OHLCBar, StockResponse, SearchResult, UserCreate, Token, WatchlistItem, TrendingItem, StockNews, EarningsDate, SECFiling, ForgotPasswordRequest, ResetPasswordRequest, MessageResponse
 from .stock import fetch_bars, fetch_info, search_tickers, fetch_news, fetch_earnings_dates
 from .edgar import fetch_sec_filings
 from . import cache
@@ -16,6 +20,12 @@ from .database import init_db, get_conn, cursor as db_cursor, PH
 from .auth import hash_password, verify_password, create_token, get_current_user
 
 app = FastAPI(title="ChronoStock API", version="0.1.0")
+
+# ── Rate limiting ──────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 
@@ -35,6 +45,29 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*", "Authorization"],
 )
+
+# ── Email helper ──────────────────────────────────────────────────────────────
+
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "log")  # "log" | "ses"
+SES_FROM_EMAIL = os.environ.get("SES_FROM_EMAIL", "")
+
+
+def _send_reset_email(to_email: str, reset_link: str) -> None:
+    if EMAIL_BACKEND == "ses":
+        import boto3
+        ses = boto3.client("ses", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        ses.send_email(
+            Source=SES_FROM_EMAIL,
+            Destination={"ToAddresses": [to_email]},
+            Message={
+                "Subject": {"Data": "Reset your ChronoStock password"},
+                "Body": {"Text": {"Data": f"Click the link to reset your password (expires in 1 hour):\n\n{reset_link}"}},
+            },
+        )
+    else:
+        # Dev mode: print link to stdout so you can copy it from the server log
+        print(f"[PASSWORD RESET] {to_email} → {reset_link}", flush=True)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -64,7 +97,9 @@ def health():
 
 
 @app.get("/api/stock/{ticker}", response_model=StockResponse)
+@limiter.limit("60/minute")
 def get_stock(
+    request: Request,
     ticker: str,
     range: TimeRange = Query(default="1Y"),
 ):
@@ -87,7 +122,7 @@ def get_stock(
     else:
         try:
             bars = fetch_bars(ticker)
-            company_name, meta = fetch_info(ticker)
+            company_name, meta, asset_type = fetch_info(ticker)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
@@ -96,6 +131,7 @@ def get_stock(
         full = StockResponse(
             ticker=ticker,
             companyName=company_name,
+            assetType=asset_type,
             bars=bars,
             events=[],  # AI layer plugs in here later
             meta=meta,
@@ -112,6 +148,7 @@ def get_stock(
     return StockResponse(
         ticker=full.ticker,
         companyName=full.companyName,
+        assetType=full.assetType,
         bars=filtered_bars,
         events=filtered_events,
         meta=full.meta,
@@ -119,7 +156,8 @@ def get_stock(
 
 
 @app.get("/api/earnings/{ticker}", response_model=list[EarningsDate])
-def get_earnings(ticker: str):
+@limiter.limit("60/minute")
+def get_earnings(request: Request, ticker: str):
     ticker = ticker.upper()
     CACHE_KEY = f"earnings:{ticker}"
     CACHE_TTL_HOURS = 24
@@ -145,7 +183,8 @@ def get_earnings(ticker: str):
 
 
 @app.get("/api/news/{ticker}", response_model=list[StockNews])
-def get_news(ticker: str):
+@limiter.limit("60/minute")
+def get_news(request: Request, ticker: str):
     ticker = ticker.upper()
     NEWS_CACHE_TTL_HOURS = 24
     CACHE_KEY = f"news:{ticker}"
@@ -159,7 +198,7 @@ def get_news(ticker: str):
                 return [StockNews(**item) for item in cached["items"]]
 
     try:
-        items = fetch_news(ticker)
+        items = fetch_news(ticker, limit=250)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"News fetch error: {e}")
 
@@ -171,7 +210,8 @@ def get_news(ticker: str):
 
 
 @app.get("/api/prices", response_model=list[TrendingItem])
-def prices(tickers: str = Query(description="Comma-separated list of tickers")):
+@limiter.limit("30/minute")
+def prices(request: Request, tickers: str = Query(description="Comma-separated list of tickers")):
     """Bulk price fetch for a list of tickers (used by watchlist enrichment)."""
     symbols = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not symbols:
@@ -223,7 +263,8 @@ def prices(tickers: str = Query(description="Comma-separated list of tickers")):
 
 
 @app.get("/api/sec/{ticker}", response_model=list[SECFiling])
-def get_sec_filings(ticker: str):
+@limiter.limit("60/minute")
+def get_sec_filings(request: Request, ticker: str):
     ticker = ticker.upper()
     CACHE_KEY = f"sec:filings:{ticker}"
     CACHE_TTL_HOURS = 24
@@ -249,12 +290,14 @@ def get_sec_filings(ticker: str):
 
 
 @app.get("/api/search", response_model=list[SearchResult])
-def search(q: str = Query(min_length=1)):
+@limiter.limit("30/minute")
+def search(request: Request, q: str = Query(min_length=1)):
     return [SearchResult(**r) for r in search_tickers(q)]
 
 
 @app.get("/api/trending", response_model=list[TrendingItem])
-def trending():
+@limiter.limit("30/minute")
+def trending(request: Request):
     CACHE_KEY = "trending"
     CACHE_TTL_HOURS = 24
 
@@ -305,7 +348,8 @@ def trending():
 # ── Auth routes ───────────────────────────────────────────────────────────────
 
 @app.post("/auth/signup", response_model=Token)
-def signup(body: UserCreate):
+@limiter.limit("5/minute")
+def signup(request: Request, body: UserCreate):
     conn = get_conn()
     try:
         with db_cursor(conn) as cur:
@@ -334,7 +378,8 @@ def signup(body: UserCreate):
 
 
 @app.post("/auth/login", response_model=Token)
-def login(body: UserCreate):
+@limiter.limit("10/minute")
+def login(request: Request, body: UserCreate):
     conn = get_conn()
     try:
         with db_cursor(conn) as cur:
@@ -355,6 +400,68 @@ def login(body: UserCreate):
 @app.get("/auth/me")
 def me(current_user: dict = Depends(get_current_user)):
     return {"id": current_user["sub"], "email": current_user["email"]}
+
+
+@app.post("/auth/forgot-password", response_model=MessageResponse)
+@limiter.limit("5/minute")
+def forgot_password(request: Request, body: ForgotPasswordRequest):
+    import secrets
+    conn = get_conn()
+    try:
+        with db_cursor(conn) as cur:
+            cur.execute(f"SELECT id FROM users WHERE email = {PH}", (body.email,))
+            row = cur.fetchone()
+        if row:
+            token = secrets.token_urlsafe(32)
+            expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            with db_cursor(conn) as cur:
+                cur.execute(
+                    f"INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES ({PH}, {PH}, {PH})",
+                    (token, row["id"], expires_at),
+                )
+            conn.commit()
+
+            frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+            reset_link = f"{frontend_url}/reset-password?token={token}"
+            _send_reset_email(body.email, reset_link)
+    finally:
+        conn.close()
+    # Always return the same message to avoid leaking which emails are registered
+    return MessageResponse(message="If that email is registered, a reset link has been sent.")
+
+
+@app.post("/auth/reset-password", response_model=MessageResponse)
+@limiter.limit("10/minute")
+def reset_password(request: Request, body: ResetPasswordRequest):
+    conn = get_conn()
+    try:
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"SELECT user_id, expires_at FROM password_reset_tokens WHERE token = {PH}",
+                (body.token,),
+            )
+            row = cur.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+
+        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+
+        hashed = hash_password(body.new_password)
+        with db_cursor(conn) as cur:
+            cur.execute(
+                f"UPDATE users SET hashed_password = {PH} WHERE id = {PH}",
+                (hashed, row["user_id"]),
+            )
+            cur.execute(
+                f"DELETE FROM password_reset_tokens WHERE token = {PH}",
+                (body.token,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return MessageResponse(message="Password updated successfully.")
 
 
 # ── Watchlist routes ──────────────────────────────────────────────────────────

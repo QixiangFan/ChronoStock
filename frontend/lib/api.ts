@@ -148,6 +148,27 @@ export async function addToWatchlist(ticker: string, token: string): Promise<voi
   if (!res.ok) throw new Error(`API error ${res.status}`);
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+}
+
+export async function resetPassword(token: string, new_password: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, new_password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `API error ${res.status}`);
+  }
+}
+
 export async function removeFromWatchlist(ticker: string, token: string): Promise<void> {
   if (isMockAuthEnabled()) {
     const upper = ticker.toUpperCase();
