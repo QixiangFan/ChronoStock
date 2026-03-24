@@ -7,6 +7,9 @@ variable "db_name" {}
 variable "polygon_api_key" {
   sensitive = true
 }
+variable "jwt_secret_key" {
+  sensitive = true
+}
 
 variable "secret_name" {
   description = "Name of the RDS secret"

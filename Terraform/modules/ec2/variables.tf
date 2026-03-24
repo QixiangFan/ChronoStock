@@ -80,3 +80,18 @@ variable "secret_name" {
   description = "Secrets Manager secret name for RDS credentials"
   type        = string
 }
+
+variable "frontend_url" {
+  description = "Frontend origin allowed by backend CORS"
+  type        = string
+}
+
+variable "secret_policy_arn" {
+  description = "IAM policy ARN allowing access to Secrets Manager"
+  type        = string
+}
+
+variable "s3_policy_arn" {
+  description = "IAM policy ARN allowing access to the app S3 bucket"
+  type        = string
+}

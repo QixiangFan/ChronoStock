@@ -1,19 +1,3 @@
-resource "aws_iam_role_policy" "ec2_secrets" {
-  name = "ec2-secrets-policy"
-  role = aws_iam_role.ec2_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "secretsmanager:GetSecretValue"
-        Resource = "arn:aws:secretsmanager:ca-central-1:549969919970:secret:s3-stock-pipeline-data-dev*"
-      }
-    ]
-  })
-}
-
 resource "aws_iam_role" "ec2_role" {
   name = "stock-pipeline-ec2-role"
 
@@ -36,6 +20,54 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_role.name
 }
 
+resource "aws_iam_role_policy_attachment" "secret_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = var.secret_policy_arn
+}
+
+resource "aws_iam_role_policy_attachment" "s3_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = var.s3_policy_arn
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy" "cloudwatch_logs" {
+  name = "stock-pipeline-cloudwatch-logs"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:CreateLogGroup",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "time_sleep" "iam_propagation" {
+  depends_on = [
+    aws_iam_instance_profile.ec2_profile,
+    aws_iam_role_policy_attachment.secret_access,
+    aws_iam_role_policy_attachment.s3_access,
+    aws_iam_role_policy_attachment.ssm_core,
+    aws_iam_role_policy.cloudwatch_logs
+  ]
+
+  create_duration = "30s"
+}
+
 resource "aws_instance" "app" {
   ami                  = var.ami
   instance_type        = var.instance_type
@@ -53,19 +85,16 @@ resource "aws_instance" "app" {
   }
 
   user_data = templatefile("${path.module}/scripts/user_data.sh", {
-    db_port        = var.db_port
-    db_host        = var.db_host
-    db_name        = var.db_name
     aws_region     = var.aws_region
     log_group_name = var.log_group_name
     secret_name    = var.secret_name
+    frontend_url   = var.frontend_url
   })
 
   tags = var.tags
 
   depends_on = [
-    aws_iam_role_policy.ec2_secrets,
-    aws_iam_instance_profile.ec2_profile
+    time_sleep.iam_propagation
   ]
 }
 
