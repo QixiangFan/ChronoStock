@@ -141,6 +141,53 @@ describe("WatchlistPage", () => {
     expect(screen.getByText("12.5")).toBeInTheDocument();
   });
 
+  it("shows row skeletons before per-stock requests resolve and falls back to bar-close price/company", async () => {
+    mockUseAuth.mockReturnValue({ user: { email: "user@example.com" }, token: "token" });
+    let resolvePrices: (value: unknown) => void;
+    let resolveStock: (value: unknown) => void;
+    (fetchWatchlist as jest.Mock).mockResolvedValue([{ ticker: "TSLA", added_at: "2026-01-01" }]);
+    (fetchPrices as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePrices = resolve;
+        })
+    );
+    (fetchStockData as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStock = resolve;
+        })
+    );
+
+    const { container } = render(<WatchlistPage />);
+
+    await waitFor(() => {
+      expect(fetchPrices).toHaveBeenCalledWith(["TSLA"]);
+    });
+    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+
+    resolvePrices!([]);
+    await waitFor(() => {
+      expect(fetchStockData).toHaveBeenCalledWith("TSLA");
+    });
+    resolveStock!({
+      ticker: "TSLA",
+      companyName: "Tesla",
+      bars: [
+        { time: "2026-01-01", open: 300, high: 310, low: 295, close: 300, volume: 100 },
+        { time: "2026-03-01", open: 300, high: 340, low: 290, close: 325, volume: 110 },
+      ],
+      events: [],
+      meta: { weekLow52: 200, weekHigh52: 400 },
+    });
+
+    expect(await screen.findByRole("link", { name: "TSLA" })).toHaveAttribute("href", "/stock/TSLA");
+    expect(screen.getByText("Tesla")).toBeInTheDocument();
+    expect(screen.getByText("$325.00")).toBeInTheDocument();
+    expect(screen.getByText("$200")).toBeInTheDocument();
+    expect(screen.getByText("$400")).toBeInTheDocument();
+  });
+
   it("keeps the row when remove fails", async () => {
     mockUseAuth.mockReturnValue({ user: { email: "user@example.com" }, token: "token" });
     (fetchWatchlist as jest.Mock).mockResolvedValue([{ ticker: "AAPL", added_at: "2026-01-01" }]);

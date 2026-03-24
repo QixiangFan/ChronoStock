@@ -7,6 +7,8 @@ import {
   fetchStockData,
   fetchTrending,
   fetchWatchlist,
+  requestPasswordReset,
+  resetPassword,
   removeFromWatchlist,
   searchTickers,
 } from "@/lib/api";
@@ -286,6 +288,58 @@ describe("API Functions", () => {
       await expect(removeFromWatchlist("aapl", "token-123")).resolves.toBeUndefined();
       await expect(fetchWatchlist("token-123")).resolves.toEqual([]);
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("password reset requests", () => {
+    it("requests a password reset email", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true });
+
+      await expect(requestPasswordReset("user@example.com")).resolves.toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledWith("http://localhost:8000/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "user@example.com" }),
+      });
+    });
+
+    it("throws when the password reset email request fails", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 500 });
+
+      await expect(requestPasswordReset("user@example.com")).rejects.toThrow("API error 500");
+    });
+
+    it("resets the password successfully", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true });
+
+      await expect(resetPassword("token-123", "new-password")).resolves.toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledWith("http://localhost:8000/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "token-123", new_password: "new-password" }),
+      });
+    });
+
+    it("surfaces backend reset-password details", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ detail: "Reset token expired" }),
+      });
+
+      await expect(resetPassword("token-123", "new-password")).rejects.toThrow("Reset token expired");
+    });
+
+    it("falls back to status code when reset-password detail cannot be parsed", async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => {
+          throw new Error("bad json");
+        },
+      });
+
+      await expect(resetPassword("token-123", "new-password")).rejects.toThrow("API error 400");
     });
   });
 });

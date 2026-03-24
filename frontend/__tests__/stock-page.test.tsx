@@ -136,7 +136,10 @@ describe("StockPage", () => {
     jest.useFakeTimers();
     (fetchNews as jest.Mock).mockResolvedValue([{ id: "n1", title: "News item", time: "2026-03-01", publisher: "WSJ" }]);
     (fetchEarnings as jest.Mock).mockResolvedValue([{ date: "2026-03-01", epsEstimate: 1.2, reportedEps: 1.5, surprisePct: 10 }]);
-    (fetchSECFilings as jest.Mock).mockResolvedValue([{ date: "2026-03-01", form: "8-K", items: [], label: "8-K filing", url: "https://example.com" }]);
+    (fetchSECFilings as jest.Mock).mockResolvedValue([
+      { date: "2026-03-01", form: "8-K", items: [], label: "8-K filing", url: "https://example.com/8k" },
+      { date: "2026-03-01", form: "4", items: ["4"], label: "Insider filing", url: "https://example.com/form4" },
+    ]);
   });
 
   afterEach(() => {
@@ -177,7 +180,7 @@ describe("StockPage", () => {
     expect(screen.getByTestId("stock-meta")).toBeInTheDocument();
     expect(screen.getByText(/positive/i)).toBeInTheDocument();
     expect(screen.getByText("News item")).toBeInTheDocument();
-    expect(screen.getByText("8-K filing")).toBeInTheDocument();
+    expect(screen.getByText(/8-k filing,insider filing/i)).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /saved/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /saved/i }));
@@ -220,5 +223,42 @@ describe("StockPage", () => {
     await waitFor(() => {
       expect(addToWatchlist).toHaveBeenCalledWith("aapl", "token");
     });
+  });
+
+  it("shows 8-K and Form 4 overlays and disables them on long ranges", async () => {
+    mockUseAuth.mockReturnValue({ user: { email: "user@example.com" }, token: "token" });
+    (fetchStockData as jest.Mock).mockResolvedValue(stockData);
+    (fetchWatchlist as jest.Mock).mockResolvedValue([]);
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    render(<StockPage />);
+
+    await screen.findByText("Apple");
+
+    await act(async () => {
+      jest.advanceTimersByTime(250);
+    });
+
+    const toggles = document.querySelectorAll("button.relative.inline-flex.h-5.w-9");
+    expect(toggles.length).toBeGreaterThanOrEqual(3);
+
+    await user.click(toggles[1] as HTMLButtonElement);
+    await user.click(toggles[2] as HTMLButtonElement);
+
+    expect(await screen.findByTitle("8-K Filing")).toBeInTheDocument();
+    expect(await screen.findByTitle("Insider Transaction")).toBeInTheDocument();
+
+    await user.click(screen.getByTitle("8-K Filing"));
+    expect(screen.getByRole("link", { name: /8-k filing/i })).toHaveAttribute("href", "https://example.com/8k");
+
+    await user.click(screen.getByTitle("Insider Transaction"));
+    expect(screen.getByRole("link", { name: /insider filing/i })).toHaveAttribute("href", "https://example.com/form4");
+
+    await user.click(screen.getByRole("button", { name: /5y/i }));
+    expect(screen.getAllByText(/n\/a for 5y\+/i).length).toBe(2);
+
+    const updatedToggles = document.querySelectorAll("button.relative.inline-flex.h-5.w-9");
+    expect((updatedToggles[1] as HTMLButtonElement).disabled).toBe(true);
+    expect((updatedToggles[2] as HTMLButtonElement).disabled).toBe(true);
   });
 });
