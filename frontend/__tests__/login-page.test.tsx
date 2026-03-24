@@ -11,9 +11,11 @@ jest.mock("next/link", () => ({
 
 const push = jest.fn();
 const login = jest.fn();
+const getSearchParam = jest.fn();
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
+  useSearchParams: () => ({ get: getSearchParam }),
 }));
 
 jest.mock("@/contexts/AuthContext", () => ({
@@ -23,6 +25,7 @@ jest.mock("@/contexts/AuthContext", () => ({
 describe("LoginPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getSearchParam.mockReturnValue(null);
   });
 
   it("submits credentials and redirects on success", async () => {

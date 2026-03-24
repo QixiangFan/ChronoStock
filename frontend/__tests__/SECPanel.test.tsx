@@ -18,6 +18,7 @@ describe("SECPanel", () => {
     const user = userEvent.setup();
     render(<SECPanel filings={filings} />);
 
+    await user.click(screen.getByRole("button", { name: /sec filing details/i }));
     await user.click(screen.getByRole("button", { name: /8-k corporate events/i }));
     expect(screen.getByRole("link", { name: /results of operations/i })).toHaveAttribute("href", filings[0].url);
 

@@ -87,6 +87,10 @@ jest.mock("@/components/chart/SECPanel", () => ({
 
 jest.mock("lucide-react", () => ({
   FileChartColumn: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid="file-chart" {...props} />,
+  ExternalLink: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid="external-link" {...props} />,
+  ArrowLeftRight: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid="arrow-left-right" {...props} />,
+  Landmark: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid="landmark" {...props} />,
+  Newspaper: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid="newspaper" {...props} />,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -157,7 +161,7 @@ describe("StockPage", () => {
     expect(screen.getByText(/loading aapl/i)).toBeInTheDocument();
     expect(await screen.findByText("Apple")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /sign in to save/i })).toHaveAttribute("href", "/login");
-    expect(screen.getByText(/sign in to see ai-powered event analysis/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in for ai event analysis/i })).toHaveAttribute("href", "/login");
   });
 
   it("renders authenticated view, removes from watchlist, toggles MA/range, event expansion, and earnings card", async () => {
